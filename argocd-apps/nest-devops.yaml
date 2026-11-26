@@ -1,0 +1,30 @@
+# The application itself: Helm chart from this repository, values for minikube.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nest-devops
+  namespace: argocd
+  # deleting the Application also deletes everything it created in the cluster
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rsnrdk/devopslabs.git
+    targetRevision: main
+    path: charts/nest-devops
+    helm:
+      releaseName: nest-devops
+      valueFiles:
+        - values-minikube.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nest-devops
+  syncPolicy:
+    automated:
+      # objects removed from Git are removed from the cluster
+      prune: true
+      # Lab step 6a: start with false (manual changes -> OutOfSync), then switch to true
+      selfHeal: false
+    syncOptions:
+      - CreateNamespace=true

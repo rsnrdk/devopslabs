@@ -31,6 +31,9 @@ resources:
     cpu: 500m
     memory: 256Mi
 
+# Seconds without rollout progress before the Deployment is reported as failed
+progressDeadlineSeconds: 600
+
 # Rolling update: start one extra pod, never go below the desired count
 rollingUpdate:
   maxSurge: 1

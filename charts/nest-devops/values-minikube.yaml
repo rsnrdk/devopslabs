@@ -1,0 +1,33 @@
+# Values used by Argo CD on the local minikube cluster (see argocd-apps/nest-devops.yaml).
+# A release = change image.tag here, commit, push. Argo CD does the rest.
+
+replicaCount: 2
+
+# a broken image tag shows up as Degraded in Argo CD after 1 minute instead of 10
+progressDeadlineSeconds: 60
+
+image:
+  tag: "1.0.0"
+
+service:
+  type: NodePort
+  port: 80
+  nodePort: 30080
+
+config:
+  environment: minikube
+  greeting: "Hello from Argo CD"
+
+# No passwords in Git: the Secret is created once by hand (see README, Lab 5)
+secrets:
+  existingSecret: nest-devops-secrets
+
+hooks:
+  preUpgradeDbCheck:
+    # Argo CD runs Helm "pre-upgrade" hooks as PreSync hooks, i.e. before EVERY sync,
+    # including the very first one when PostgreSQL does not exist yet -> the first sync would fail.
+    enabled: false
+
+tests:
+  # "helm test" is a Helm CLI feature; under Argo CD health checks play this role
+  enabled: false

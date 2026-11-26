@@ -207,6 +207,7 @@ charts/nest-devops/
 | `ingress.host` | `nest-devops.local` | домен |
 | `resources` | 100m/128Mi → 500m/256Mi | requests і limits застосунку |
 | `rollingUpdate.maxSurge` / `maxUnavailable` | `1` / `0` | стратегія оновлення |
+| `progressDeadlineSeconds` | `600` | скільки секунд чекати прогресу rollout, перш ніж вважати його невдалим |
 | `config.environment` | `dev` | `APP_ENV` у ConfigMap |
 | `config.greeting` | `Hello from Helm` | `APP_GREETING` у ConfigMap |
 | `secrets.existingSecret` | `""` | ім'я вже створеного Secret; якщо задано, чарт свій Secret не створює |
@@ -296,3 +297,120 @@ kubectl get all,pvc,secret,cm,ingress -n nest-devops
 helm test nest-devops -n nest-devops
 kubectl get events -n nest-devops | grep pre-upgrade    # слід від хука після helm upgrade
 ```
+
+---
+
+## ЛР-5: GitOps з Argo CD
+
+Розгортання більше не робиться командами `helm upgrade`. Бажаний стан описаний у Git, а Argo CD у кластері порівнює його з реальним станом і сам приводить кластер до описаного.
+
+### Структура (варіант b: усе в репозиторії застосунку)
+
+```
+bootstrap/root-app.yaml          # кореневий Application (App of Apps), єдине, що застосовується вручну
+argocd-apps/nest-devops.yaml     # Application застосунку: чарт + values-minikube.yaml, auto-sync
+charts/nest-devops/              # чарт із ЛР-4
+charts/nest-devops/values-minikube.yaml   # значення для minikube; тут змінюється тег образу
+```
+
+```
+kubectl apply -f bootstrap/root-app.yaml
+        │
+        ▼
+  Application "root"  ── стежить за ──►  argocd-apps/
+        │ створює
+        ▼
+  Application "nest-devops"  ── стежить за ──►  charts/nest-devops + values-minikube.yaml
+        │ helm template + apply
+        ▼
+  Deployment, Service, ConfigMap, PVC, PostgreSQL у namespace nest-devops
+```
+
+Що відрізняється від запуску чарта через Helm:
+
+- **Паролі не в Git.** `values-minikube.yaml` посилається на `existingSecret: nest-devops-secrets`, а сам Secret створюється в кластері один раз вручну.
+- **Хук `pre-upgrade` вимкнено.** Argo CD виконує Helm-хуки `pre-upgrade` як PreSync, тобто перед **кожною** синхронізацією, навіть першою, коли бази ще немає.
+- **`helm test` вимкнено.** Під Argo CD стан застосунку показують health-перевірки самого Argo CD.
+- **`progressDeadlineSeconds: 60`.** Зламаний тег стає `Degraded` за хвилину, а не за 10.
+
+### 1. Образ у реєстрі
+
+Образи публікує CI за git-тегом:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0     # CI публікує ghcr.io/rsnrdk/nest-devops:1.0.0
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+Пакет на GitHub (Packages → nest-devops → Package settings) треба зробити **Public**, щоб minikube міг завантажити образ без пароля. Версію застосунку видно на сторінці, у `/version` і `/api/info`.
+
+### 2. Встановлення Argo CD
+
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd --server-side -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl wait -n argocd --for=condition=available deployment --all --timeout=300s
+
+# веб-інтерфейс: https://localhost:8443
+kubectl port-forward svc/argocd-server -n argocd 8443:443
+
+# CLI argocd (https://github.com/argoproj/argo-cd/releases): вхід і зміна початкового пароля
+argocd admin initial-password -n argocd
+argocd login localhost:8443 --username admin --insecure
+argocd account update-password
+```
+
+Якщо репозиторій приватний: `argocd repo add https://github.com/rsnrdk/devopslabs.git --username <user> --password <token>`.
+
+### 3. Підключення застосунку
+
+```bash
+kubectl create namespace nest-devops
+kubectl create secret generic nest-devops-secrets -n nest-devops \
+  --from-literal=DB_PASSWORD=<пароль> --from-literal=ADMIN_TOKEN=<токен>
+kubectl apply -f bootstrap/root-app.yaml
+argocd app list
+argocd app get nest-devops
+```
+
+В інтерфейсі `root` і `nest-devops` мають стан **Synced / Healthy**, а дерево показує Deployment → ReplicaSet → Pod, Service, ConfigMap і PVC.
+
+Застосунок: `minikube service nest-devops -n nest-devops` (NodePort `30080`).
+
+### 4. Реліз через Git
+
+```bash
+# 1. новий образ
+git tag v1.2.0
+git push origin v1.2.0
+# 2. реліз: у charts/nest-devops/values-minikube.yaml змінити image.tag на "1.2.0"
+git commit -am "release 1.2.0"
+git push
+```
+
+Argo CD перевіряє Git приблизно раз на 3 хвилини. Щоб не чекати, можна натиснути **Refresh** в інтерфейсі або виконати `argocd app get nest-devops --refresh`. Після синхронізації сторінка показує `v1.2.0`.
+
+### 5. Дрейф, Health і відкат
+
+```bash
+# a) ручна зміна при selfHeal: false -> OutOfSync, кластер лишається зміненим
+kubectl scale deployment nest-devops -n nest-devops --replicas=5
+argocd app get nest-devops                  # Sync Status: OutOfSync
+#    у argocd-apps/nest-devops.yaml поставити selfHeal: true, commit, push
+kubectl scale deployment nest-devops -n nest-devops --replicas=5
+kubectl get deploy nest-devops -n nest-devops -w   # Argo CD повертає 2 репліки з Git
+
+# b) неіснуючий тег: Synced, але Degraded (старі поди продовжують працювати)
+#    у values-minikube.yaml поставити image.tag: "9.9.9", commit, push
+argocd app get nest-devops                  # Sync: Synced, Health: Degraded
+
+# c) відкат через git revert
+git log --oneline
+git revert <коміт-з-тегом-9.9.9>
+git push
+argocd app history nest-devops
+```
+
+Відкат у GitOps — це новий коміт, а не ручна команда в кластері. Історія в Git і в Argo CD лишається повною.
