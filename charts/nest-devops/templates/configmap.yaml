@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nest-devops.configMapName" . }}
+  labels:
+    {{- include "nest-devops.labels" . | nindent 4 }}
+data:
+  APP_ENV: {{ .Values.config.environment | quote }}
+  APP_GREETING: {{ .Values.config.greeting | quote }}
+  DB_HOST: {{ include "nest-devops.dbHost" . | quote }}
+  DB_PORT: {{ include "nest-devops.dbPort" . | quote }}
+  DB_NAME: {{ .Values.postgres.database | quote }}
+  DB_USER: {{ .Values.postgres.user | quote }}

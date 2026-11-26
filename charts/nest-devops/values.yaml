@@ -1,0 +1,86 @@
+# Default values = development environment.
+# Override per environment with -f values-<env>.yaml, or a single value with --set key=value.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/rsnrdk/nest-devops
+  # empty = use appVersion from Chart.yaml
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+service:
+  # NodePort: reachable inside the cluster (port) and from the host (nodePort)
+  type: NodePort
+  port: 80
+  # leave empty to let Kubernetes pick a free port (30000-32767)
+  nodePort: ""
+
+ingress:
+  enabled: false
+  className: nginx
+  host: nest-devops.local
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Rolling update: start one extra pod, never go below the desired count
+rollingUpdate:
+  maxSurge: 1
+  maxUnavailable: 0
+
+# Non-secret application settings -> ConfigMap
+config:
+  environment: dev
+  greeting: "Hello from Helm"
+
+# Sensitive settings -> Secret.
+# existingSecret: name of a Secret created outside the chart (keys DB_PASSWORD, ADMIN_TOKEN);
+# when set, the chart does not create its own Secret and the values below are ignored.
+secrets:
+  existingSecret: ""
+  # throwaway development values, never real passwords
+  dbPassword: "dev-db-password"
+  adminToken: "dev-admin-token"
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "17-alpine"
+  database: app
+  user: app
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  persistence:
+    enabled: true
+    size: 1Gi
+    # empty = default StorageClass of the cluster
+    storageClass: ""
+
+# Used only when postgres.enabled=false
+externalDatabase:
+  host: ""
+  port: 5432
+
+hooks:
+  # pre-upgrade Job: before an upgrade, make sure the database answers
+  preUpgradeDbCheck:
+    enabled: true
+
+tests:
+  # helm test: checks /health/ready and that /version matches the deployed tag
+  enabled: true
+  image: busybox:1.37

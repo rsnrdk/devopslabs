@@ -22,6 +22,17 @@ jobs:
       - run: npm run test:e2e
       - run: npm run build
 
+  helm:
+    name: Helm lint and render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+      - run: helm lint charts/nest-devops
+      - run: helm lint charts/nest-devops -f charts/nest-devops/values-prod.yaml
+      - run: helm template nest-devops charts/nest-devops -f charts/nest-devops/values-dev.yaml > /dev/null
+      - run: helm template nest-devops charts/nest-devops -f charts/nest-devops/values-prod.yaml > /dev/null
+
   # A git tag v1.2.0 publishes the image ghcr.io/<owner>/nest-devops:1.2.0 (never "latest")
   image:
     name: Build and push image

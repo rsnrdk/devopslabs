@@ -1,0 +1,19 @@
+{{ include "nest-devops.fullname" . }} {{ include "nest-devops.imageTag" . }} is installed in namespace {{ .Release.Namespace }} (revision {{ .Release.Revision }}).
+
+Wait until the pods are ready:
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} -w
+
+Open the application:
+{{- if .Values.ingress.enabled }}
+  1. Add "127.0.0.1 {{ .Values.ingress.host }}" to your hosts file
+  2. Keep "minikube tunnel" running in a separate terminal
+  3. Open http://{{ .Values.ingress.host }}
+{{- else if eq .Values.service.type "NodePort" }}
+  minikube service {{ include "nest-devops.fullname" . }} -n {{ .Release.Namespace }}
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "nest-devops.fullname" . }} 8080:{{ .Values.service.port }}
+  then open http://localhost:8080
+{{- end }}
+
+Check the release:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

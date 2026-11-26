@@ -1,0 +1,40 @@
+{{- if .Values.hooks.preUpgradeDbCheck.enabled }}
+# Runs before every "helm upgrade" (not on install). If the database does not answer,
+# the upgrade stops here and the running version is left untouched.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "nest-devops.fullname" . }}-pre-upgrade-db-check
+  labels:
+    {{- include "nest-devops.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels:
+        {{- include "nest-devops.commonLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: db-check
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              for i in $(seq 1 20); do
+                if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME"; then
+                  echo "database is ready, upgrade can continue"; exit 0
+                fi
+                sleep 3
+              done
+              echo "database is not reachable, aborting the upgrade"; exit 1
+          envFrom:
+            - configMapRef:
+                name: {{ include "nest-devops.configMapName" . }}
+{{- end }}

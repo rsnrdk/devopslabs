@@ -162,3 +162,137 @@ kubectl rollout undo deployment/nest-devops -n nest-devops   # виправле�
 ```bash
 kubectl delete -f k8s/
 ```
+
+---
+
+## ЛР-4: Helm-чарт
+
+Чарт лежить у [`charts/nest-devops/`](charts/nest-devops) і створює той самий набір об'єктів, що й `k8s/`. Єдина відмінність: namespace створює Helm (`--create-namespace`), а не шаблон.
+
+```
+charts/nest-devops/
+├── Chart.yaml               # name, description, version, appVersion
+├── values.yaml              # значення за замовчуванням = середовище розробки
+├── values-dev.yaml          # dev: 1 репліка, малі ресурси, образ 1.1.0, без Ingress
+├── values-prod.yaml         # prod: 3 репліки, більші ресурси, образ 1.0.0, Ingress, Secret поза чартом
+└── templates/
+    ├── _helpers.tpl         # іменовані шаблони: fullname, labels, selectorLabels, secretName, ...
+    ├── configmap.yaml  secret.yaml  deployment.yaml  service.yaml  ingress.yaml
+    ├── postgres-pvc.yaml  postgres-deployment.yaml  postgres-service.yaml
+    ├── hook-pre-upgrade-db-check.yaml   # хук pre-upgrade
+    ├── tests/test-connection.yaml       # helm test
+    └── NOTES.txt            # підказка після встановлення
+```
+
+### version і appVersion
+
+- **`version: 0.1.0`** — версія **чарта**, тобто шаблонів і значень за замовчуванням. Змінився шаблон (наприклад, додали пробу) — піднімаємо `version`.
+- **`appVersion: "1.0.0"`** — версія **застосунку** в чарті. Якщо `image.tag` порожній, саме вона стає тегом образу. Вийшов новий образ без змін у шаблонах — змінюється лише `appVersion`.
+
+Це дві незалежні лінійки версій: той самий чарт `0.1.0` може розгорнути застосунок `1.0.0` або `1.1.0`.
+
+### Параметри values.yaml
+
+| Параметр | За замовчуванням (dev) | Опис |
+|---|---|---|
+| `replicaCount` | `1` | кількість подів застосунку |
+| `image.repository` | `ghcr.io/rsnrdk/nest-devops` | репозиторій образу |
+| `image.tag` | `""` (= `appVersion`) | тег образу |
+| `image.pullPolicy` | `IfNotPresent` | коли завантажувати образ |
+| `service.type` | `NodePort` | тип Service |
+| `service.port` | `80` | порт Service |
+| `service.nodePort` | `""` (обирає Kubernetes) | порт на вузлі |
+| `ingress.enabled` | `false` | створювати Ingress |
+| `ingress.className` | `nginx` | клас Ingress |
+| `ingress.host` | `nest-devops.local` | домен |
+| `resources` | 100m/128Mi → 500m/256Mi | requests і limits застосунку |
+| `rollingUpdate.maxSurge` / `maxUnavailable` | `1` / `0` | стратегія оновлення |
+| `config.environment` | `dev` | `APP_ENV` у ConfigMap |
+| `config.greeting` | `Hello from Helm` | `APP_GREETING` у ConfigMap |
+| `secrets.existingSecret` | `""` | ім'я вже створеного Secret; якщо задано, чарт свій Secret не створює |
+| `secrets.dbPassword` | `dev-db-password` | `DB_PASSWORD` (тестове значення) |
+| `secrets.adminToken` | `dev-admin-token` | `ADMIN_TOKEN` (тестове значення) |
+| `postgres.enabled` | `true` | розгортати PostgreSQL разом із застосунком |
+| `postgres.image.repository` / `tag` | `postgres` / `17-alpine` | образ бази |
+| `postgres.database` / `user` | `app` / `app` | назва бази й користувач |
+| `postgres.resources` | 100m/128Mi → 500m/512Mi | ресурси бази |
+| `postgres.persistence.enabled` | `true` | створювати PersistentVolumeClaim |
+| `postgres.persistence.size` | `1Gi` | розмір диска |
+| `postgres.persistence.storageClass` | `""` (за замовчуванням кластера) | StorageClass |
+| `externalDatabase.host` / `port` | `""` / `5432` | зовнішня база, якщо `postgres.enabled=false` |
+| `hooks.preUpgradeDbCheck.enabled` | `true` | хук перевірки бази перед `helm upgrade` |
+| `tests.enabled` | `true` | под для `helm test` |
+| `tests.image` | `busybox:1.37` | образ тестового пода |
+
+### Пріоритет значень
+
+Від найслабшого до найсильнішого:
+
+1. `values.yaml` у чарті;
+2. файли `-f` / `--values` (якщо їх кілька, наступний перекриває попередній);
+3. `--set` / `--set-string` (найсильніший).
+
+Тобто `helm upgrade ... -f values-prod.yaml --set image.tag=1.1.0` розгорне prod-конфігурацію, але з образом `1.1.0`.
+
+### Перевірка без встановлення
+
+```bash
+helm lint charts/nest-devops
+helm lint charts/nest-devops -f charts/nest-devops/values-prod.yaml
+
+helm template nest-devops charts/nest-devops -n nest-devops -f charts/nest-devops/values-dev.yaml  > dev.yaml
+helm template nest-devops charts/nest-devops -n nest-devops -f charts/nest-devops/values-prod.yaml > prod.yaml
+git diff --no-index dev.yaml prod.yaml
+```
+
+### Встановлення
+
+```bash
+# dev
+helm install nest-devops charts/nest-devops -n nest-devops --create-namespace -f charts/nest-devops/values-dev.yaml
+
+# prod: спочатку Secret поза Git
+kubectl create namespace nest-devops-prod
+kubectl create secret generic nest-devops-prod-secrets -n nest-devops-prod \
+  --from-literal=DB_PASSWORD=<пароль> --from-literal=ADMIN_TOKEN=<токен>
+helm install nest-devops charts/nest-devops -n nest-devops-prod -f charts/nest-devops/values-prod.yaml
+```
+
+Перед `helm install` треба прибрати розгортання з ЛР-3 (`kubectl delete -f k8s/`), бо імена об'єктів збігаються.
+
+### Стан релізу
+
+```bash
+helm list -n nest-devops
+helm status nest-devops -n nest-devops
+helm get values nest-devops -n nest-devops          # значення, задані при встановленні
+helm get values nest-devops -n nest-devops --all    # усі значення разом із дефолтами
+kubectl get secrets -n nest-devops -l owner=helm    # тут Helm зберігає ревізії: sh.helm.release.v1.nest-devops.vN
+```
+
+### Життєвий цикл релізу
+
+```bash
+helm upgrade nest-devops charts/nest-devops -n nest-devops --reuse-values --set image.tag=1.1.0
+# DB_PASSWORD має збігатися з паролем, з яким уже ініціалізовано базу
+kubectl create secret generic nest-devops-prod-secrets -n nest-devops \
+  --from-literal=DB_PASSWORD=dev-db-password --from-literal=ADMIN_TOKEN=prod-admin-token
+helm upgrade nest-devops charts/nest-devops -n nest-devops -f charts/nest-devops/values-prod.yaml
+helm history nest-devops -n nest-devops
+helm rollback nest-devops 2 -n nest-devops
+helm history nest-devops -n nest-devops             # з'явилась нова ревізія "Rollback to 2"
+helm uninstall nest-devops -n nest-devops
+kubectl get all,pvc,secret,cm,ingress -n nest-devops
+```
+
+Відкат не стирає історію: він створює **нову** ревізію з конфігурацією старої.
+
+### Завдання на вибір: хук і тест релізу
+
+- **`hook-pre-upgrade-db-check.yaml`**: Job з анотацією `helm.sh/hook: pre-upgrade`. Перед кожним `helm upgrade` (але не перед `install`) він через `pg_isready` перевіряє, що база відповідає. Якщо ні, оновлення зупиняється і поточна версія лишається працювати. Після успіху Job видаляється (`hook-delete-policy: hook-succeeded`).
+- **`tests/test-connection.yaml`**: под з `helm.sh/hook: test`. Він перевіряє `/health/ready` і те, що `/version` повертає саме той тег, який розгорнув реліз.
+
+```bash
+helm test nest-devops -n nest-devops
+kubectl get events -n nest-devops | grep pre-upgrade    # слід від хука після helm upgrade
+```

@@ -1,0 +1,8 @@
+apiVersion: v2
+name: nest-devops
+description: Nest.js demo application with PostgreSQL (DevOps labs)
+type: application
+# version of the CHART itself: bump it when templates or default values change
+version: 0.1.0
+# version of the APPLICATION inside: the image tag used when image.tag is empty
+appVersion: "1.0.0"

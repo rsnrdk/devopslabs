@@ -1,0 +1,38 @@
+# Production: more replicas and resources, pinned stable image, Ingress on.
+# The Secret is NOT stored here: create it in the cluster beforehand, e.g.
+#   kubectl create secret generic nest-devops-prod-secrets -n <namespace> \
+#     --from-literal=DB_PASSWORD=... --from-literal=ADMIN_TOKEN=...
+# DB_PASSWORD must match the password the PostgreSQL volume was initialised with:
+# PostgreSQL reads POSTGRES_PASSWORD only on the very first start of an empty volume.
+replicaCount: 3
+
+image:
+  tag: "1.0.0"
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 192Mi
+  limits:
+    cpu: "1"
+    memory: 384Mi
+
+ingress:
+  enabled: true
+  host: nest-devops.prod.local
+
+config:
+  environment: prod
+  greeting: "Hello from production"
+
+secrets:
+  existingSecret: nest-devops-prod-secrets
+
+postgres:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
