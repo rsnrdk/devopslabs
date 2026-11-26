@@ -25,6 +25,6 @@ spec:
       # objects removed from Git are removed from the cluster
       prune: true
       # Lab step 6a: start with false (manual changes -> OutOfSync), then switch to true
-      selfHeal: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
