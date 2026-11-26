@@ -1,0 +1,18 @@
+# Internal address of the database: nest-devops-postgres:5432 (only inside the cluster)
+apiVersion: v1
+kind: Service
+metadata:
+  name: nest-devops-postgres
+  namespace: nest-devops
+  labels:
+    app.kubernetes.io/name: nest-devops-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: nest-devops
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nest-devops-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

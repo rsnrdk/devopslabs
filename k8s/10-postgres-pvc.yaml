@@ -1,0 +1,16 @@
+# Disk for PostgreSQL: data survives pod restarts and re-creation.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nest-devops-postgres-data
+  namespace: nest-devops
+  labels:
+    app.kubernetes.io/name: nest-devops-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: nest-devops
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

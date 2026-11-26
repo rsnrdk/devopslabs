@@ -1,0 +1,25 @@
+# Local run without Kubernetes: docker compose up --build
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: local-dev-password
+    ports:
+      - "5432:5432"
+
+  app:
+    build:
+      context: .
+      args:
+        APP_VERSION: local
+    depends_on:
+      - postgres
+    environment:
+      APP_ENV: compose
+      DB_HOST: postgres
+      DB_PASSWORD: local-dev-password
+      ADMIN_TOKEN: local-admin-token
+    ports:
+      - "3000:3000"

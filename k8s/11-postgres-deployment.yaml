@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nest-devops-postgres
+  namespace: nest-devops
+  labels:
+    app.kubernetes.io/name: nest-devops-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: nest-devops
+spec:
+  replicas: 1
+  # ReadWriteOnce volume: the old pod must stop before the new one mounts the disk
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nest-devops-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nest-devops-postgres
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: nest-devops
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: nest-devops-config
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: nest-devops-config
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nest-devops-secrets
+                  key: DB_PASSWORD
+            # subdirectory: the volume root may contain lost+found, which initdb refuses
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nest-devops-postgres-data

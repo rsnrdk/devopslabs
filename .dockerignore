@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+.git
+.github
+k8s
+charts
+argocd-apps
+bootstrap
+*.md

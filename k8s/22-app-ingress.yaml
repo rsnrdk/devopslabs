@@ -1,0 +1,23 @@
+# http://nest-devops.local through the minikube ingress addon (nginx)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nest-devops
+  namespace: nest-devops
+  labels:
+    app.kubernetes.io/name: nest-devops
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: nest-devops
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: nest-devops.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nest-devops
+                port:
+                  name: http

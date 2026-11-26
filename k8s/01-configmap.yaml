@@ -1,0 +1,16 @@
+# Non-secret settings. Injected into the app container as environment variables (envFrom).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nest-devops-config
+  namespace: nest-devops
+  labels:
+    app.kubernetes.io/name: nest-devops
+    app.kubernetes.io/part-of: nest-devops
+data:
+  APP_ENV: "minikube"
+  APP_GREETING: "Hello from Kubernetes"
+  DB_HOST: "nest-devops-postgres"
+  DB_PORT: "5432"
+  DB_NAME: "app"
+  DB_USER: "app"

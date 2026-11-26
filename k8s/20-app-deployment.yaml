@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nest-devops
+  namespace: nest-devops
+  labels:
+    app.kubernetes.io/name: nest-devops
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: nest-devops
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  # zero-downtime update: start one new pod, wait until it is ready, only then stop an old one
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nest-devops
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nest-devops
+        app.kubernetes.io/component: app
+        app.kubernetes.io/part-of: nest-devops
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: app
+          image: ghcr.io/rsnrdk/nest-devops:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: nest-devops-config
+            - secretRef:
+                name: nest-devops-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          # traffic only after the app can reach the database
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          # restart only if the process itself hangs (does not check the database)
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            # give the Service a moment to stop routing to this pod before it shuts down
+            preStop:
+              exec:
+                command: ["sleep", "5"]
